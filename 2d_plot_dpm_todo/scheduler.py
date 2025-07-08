@@ -69,7 +69,7 @@ class DPMSolverScheduler(BaseScheduler):
         Refer to Eq. 4 in the DDPM paper and Eq. 2.1 in the DPM-Solver paper.
         """
         dpm_alphas = torch.sqrt(self.alphas_cumprod)
-        dpm_sigmas = torch.sqrt(1 - self.alphas_cumprod)
+        dpm_sigmas = torch.sqrt(1 - self.alphas_cumprod) 
         dpm_lambdas = torch.log(dpm_alphas) - torch.log(dpm_sigmas)
 
         self.register_buffer("dpm_alphas", dpm_alphas)
@@ -126,8 +126,46 @@ class DPMSolverScheduler(BaseScheduler):
         assert torch.all(s > t), f"timestep s should be larger than timestep t"
         ######## TODO ########
         # DO NOT change the code outside this part.
+        # This is an implementation that leads to instability in sampling. Tho the logic is correct.
+        # alpha_s = extract(self.dpm_alphas, s, x_s)
+        # x_t = x_s
+        # lambda_s = extract(self.dpm_lambdas, s, x_s)
+        # lambda_t = extract(self.dpm_lambdas, t, x_s)
+
+        # alpha_t = extract(self.dpm_alphas, t, x_s)
+
+        # first_coeff = alpha_t / alpha_s 
+        # second_coeff = alpha_t * (lambda_s - lambda_t) 
+        # x_t = first_coeff * x_s - second_coeff * eps_theta
+
+
+        # This one works well, based on the DPM-Solver codebase 
+        # https://github.com/LuChengTHU/dpm-solver/blob/main/dpm_solver_pytorch.py#L547C5-L592C27
+        # Extract DPM-Solver parameters
+        lambda_s = extract(self.dpm_lambdas, s, x_s)
+        lambda_t = extract(self.dpm_lambdas, t, x_s)
         alpha_s = extract(self.dpm_alphas, s, x_s)
-        x_t = x_s
+        alpha_t = extract(self.dpm_alphas, t, x_s)
+        sigma_s = extract(self.dpm_sigmas, s, x_s)
+        sigma_t = extract(self.dpm_sigmas, t, x_s)
+        
+        # Compute h = lambda_t - lambda_s
+        h = lambda_t - lambda_s
+        
+        # DPM-Solver first-order update (equivalent to DDIM)
+        # Using the standard DPM-Solver formulation (not dpmsolver++)
+        phi_1 = torch.expm1(h)  # exp(h) - 1, more numerically stable
+        
+        # Compute log coefficients for numerical stability
+        log_alpha_s = torch.log(alpha_s)
+        log_alpha_t = torch.log(alpha_t)
+        
+        x_t = (
+            torch.exp(log_alpha_t - log_alpha_s) * x_s
+            - (sigma_t * phi_1) * eps_theta
+        )
+        
+        
         ######################
         return x_t
     
@@ -153,7 +191,20 @@ class DPMSolverScheduler(BaseScheduler):
         # An example of computing noise prediction inside the function.
         model_output = self.net_forward_fn(x_ti1, t_i1.to(x_ti1.device))
         x_ti = x_ti1
-        ######################
+        # Step 1: First-order step to get u_i
+        # u_i = self.first_order_step(x_ti1, t_i1, s_i, eps_theta)
+        
+        # # Step 2: Get noise prediction at (u_i, s_i)
+        # eps_s_i = self.net_forward_fn(u_i, s_i.to(u_i.device))
+        
+        # # Step 3: Extract coefficients for second-order correction
+        # alpha_i1 = extract(self.dpm_alphas, t_i1, x_ti1)
+        # alpha_i = extract(self.dpm_alphas, t_i, x_ti1)
+        
+        # # Step 4: Compute the second-order DPM-Solver step
+        # r_i = (lambda_i1 - lambda_i) / (lambda_i1 - (lambda_i1 + lambda_i)/2)
+        # x_ti = (alpha_i / alpha_i1) * x_ti1 - alpha_i * (lambda_i1 - lambda_i) * (1 + 1/(2*r_i)) * eps_theta + alpha_i * (lambda_i1 - lambda_i) * (1/(2*r_i)) * eps_s_i
+        # ######################
 
         return x_ti
 
@@ -206,7 +257,9 @@ class DPMSolverScheduler(BaseScheduler):
         # DO NOT change the code outside this part.
         # Assignment 6. Implement the DPM forward step.
         x_t = x_0
-        
+        alpha_t = extract(self.dpm_alphas, t, x_t)
+        sigma_t = extract(self.dpm_sigmas, t, x_t)
+        x_t = alpha_t * x_t + sigma_t * eps
         #######################
 
         return x_t, eps

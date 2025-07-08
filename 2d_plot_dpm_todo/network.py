@@ -84,6 +84,19 @@ class SimpleNet(nn.Module):
         ######## TODO ########
         # DO NOT change the code outside this part.
         # You can copy & paste your implementation of previous Assignments.
+        self.num_timesteps = num_timesteps
+
+        layers = []
+
+        in_dim = dim_in
+        for h_dim in dim_hids:
+            layers.append(TimeLinear(in_dim, h_dim, num_timesteps))
+            layers.append(nn.SiLU())
+            in_dim = h_dim
+
+        # output layer
+        layers.append(TimeLinear(in_dim, dim_out, num_timesteps))
+        self.net = nn.Sequential(*layers)
 
         ######################
         
@@ -99,6 +112,14 @@ class SimpleNet(nn.Module):
         ######## TODO ########
         # DO NOT change the code outside this part.
         # You can copy & paste your implementation of previous Assignments.
+        h = x
+        for layer in self.net:
+            if isinstance(layer, TimeLinear):
+                h = layer(h, t)
+            else:
+                h = layer(h)
+
+        return h
 
         ######################
-        return x
+        
