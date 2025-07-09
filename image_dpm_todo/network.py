@@ -83,14 +83,17 @@ class UNet(nn.Module):
                 # DO NOT change the code outside this part.
                 # Implement random null conditioning in CFG training.
                 # You can copy & paste your implementation of previous Assignments.
-                raise NotImplementedError("TODO")
+                # Randomly mask some class labels to 0 (null condition) during training.
+                mask = torch.rand(class_label.shape[0], device=class_label.device) < self.cfg_dropout
+                class_label[mask] = 0
                 #######################
             
             ######## TODO ########
             # DO NOT change the code outside this part.
             # Implement class conditioning
             # You can copy & paste your implementation of previous Assignments.
-            raise NotImplementedError("TODO")
+            class_emb = self.class_embedding(class_label)
+            temb = temb + class_emb
             #######################
 
         # Downsampling

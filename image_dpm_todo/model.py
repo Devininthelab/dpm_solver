@@ -52,6 +52,7 @@ class DiffusionModule(nn.Module):
         x_T = torch.randn(shape).to(self.device)
 
         self.var_scheduler.set_timesteps(num_inference_timesteps//order)
+        do_classifier_free_guidance = guidance_scale > 1.0
         assert guidance_scale > 1.0
 
         ######## TODO ########
@@ -60,6 +61,7 @@ class DiffusionModule(nn.Module):
         # You can copy & paste your implementation of previous Assignments.
         assert class_label is not None
         assert len(class_label) == batch_size, f"len(class_label) != batch_size. {len(class_label)} != {batch_size}"
+        class_label = torch.cat([torch.zeros(batch_size, device=self.device, dtype=torch.long), class_label]) # null condition, class condition
         #######################
 
         traj = [x_T]
@@ -69,8 +71,20 @@ class DiffusionModule(nn.Module):
             # DO NOT change the code outside this part.
             # Implement the classifier-free guidance.
             # You can copy & paste your implementation of previous Assignments.
-            noise_pred = x_t_prev
-            x_t_prev = self.var_scheduler.step(x_t, t, noise_pred, class_label=class_label)
+            if do_classifier_free_guidance:
+                ######## TODO ########
+                # Assignment 2. Implement the classifier-free guidance.
+                # pass the class_label to the network
+                nois_pred_null = self.network(x_t, timestep=t.to(self.device), class_label=class_label[:batch_size]) # null condition
+                nois_pred_class = self.network(x_t, timestep=t.to(self.device), class_label=class_label[batch_size:]) # class condition
+                noise_pred = (1.0 + guidance_scale) * nois_pred_class - guidance_scale * nois_pred_null
+
+                #######################
+            else:
+                noise_pred = self.network(x_t, timestep=t.to(self.device))
+            
+            x_t_prev = self.var_scheduler.step(x_t, t.to(self.device), noise_pred)
+
             #######################
 
 

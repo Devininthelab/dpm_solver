@@ -136,7 +136,27 @@ class DPMSolverScheduler(BaseScheduler):
         ######## TODO ########
         # DO NOT change the code outside this part.
         alpha_s = extract(self.dpm_alphas, s, x_s)
-        x_t = x_s
+        alpha_t = extract(self.dpm_alphas, t, x_s)
+        sigma_s = extract(self.dpm_sigmas, s, x_s)
+        sigma_t = extract(self.dpm_sigmas, t, x_s)
+        lambda_s = extract(self.dpm_lambdas, s, x_s)
+        lambda_t = extract(self.dpm_lambdas, t, x_s)
+
+        # Compute h = lambda_t - lambda_s
+        h = lambda_t - lambda_s
+
+        phi_1 = torch.expm1(h)  # exp(h) - 1, more numerically stable
+
+        # Compute the log coefficients for numerical stability
+        log_alpha_s = torch.log(alpha_s)
+        log_alpha_t = torch.log(alpha_t)
+
+        x_t = (
+            torch.exp(log_alpha_t - log_alpha_s) * x_s
+            - (sigma_t * phi_1) * eps_theta
+        )
+
+
         ######################
         return x_t
 
@@ -159,16 +179,47 @@ class DPMSolverScheduler(BaseScheduler):
         """
         ######## TODO ########
         # DO NOT change the code outside this part.
+        # lambda_i1 = extract(self.dpm_lambdas, t_i1, x_ti1)
+        # lambda_i = extract(self.dpm_lambdas, t_i, x_ti1)
+        # s_i = self.inverse_lambda((lambda_i1 + lambda_i) / 2)
+
+        # # An example of computing noise prediction inside the function.
+        # # In Task 2, you need to make it as CFG sampling.
+        # model_output = self.net_forward_fn(
+        #     x_ti1, t_i1.to(x_ti1.device), class_label=class_label
+        # )
+        # x_ti = x_ti1
+
+
         lambda_i1 = extract(self.dpm_lambdas, t_i1, x_ti1)
         lambda_i = extract(self.dpm_lambdas, t_i, x_ti1)
-        s_i = self.inverse_lambda((lambda_i1 + lambda_i) / 2)
+        h = lambda_i - lambda_i1
+        lambda_s1 = lambda_i1 + h * 0.5
+        si = self.inverse_lambda(lambda_s1)
 
-        # An example of computing noise prediction inside the function.
-        # In Task 2, you need to make it as CFG sampling.
-        model_output = self.net_forward_fn(
-            x_ti1, t_i1.to(x_ti1.device), class_label=class_label
+        log_alpha_i1 = torch.log(extract(self.dpm_alphas, t_i1, x_ti1))
+        log_alpha_si = torch.log(extract(self.dpm_alphas, si, x_ti1))
+        log_alpha_i = torch.log(extract(self.dpm_alphas, t_i, x_ti1))
+
+        sigma_i1 = extract(self.dpm_sigmas, t_i1, x_ti1)
+        sigma_si = extract(self.dpm_sigmas, si, x_ti1)
+        sigma_i = extract(self.dpm_sigmas, t_i, x_ti1)
+
+        # Compute Line 4 of the algorithm
+        phi_1 = torch.expm1(h * 0.5)  # exp(h / 2) - 1
+        ui = (
+            torch.exp(log_alpha_si - log_alpha_i1) * x_ti1
+            - (sigma_si * phi_1) * eps_theta
         )
-        x_ti = x_ti1
+
+        # Compute line 5 of the algorithm
+        phi_2 = torch.expm1(h)  # exp(h) - 1
+        # get the noise prediction 
+        eps_theta_ui_si = self.net_forward_fn(ui, si, class_label=class_label)
+        x_ti = (
+            torch.exp(log_alpha_i - log_alpha_i1) * x_ti1
+            - (sigma_i * phi_2) * eps_theta_ui_si
+        )
         ######################
 
         return x_ti

@@ -114,7 +114,7 @@ class DPMSolverScheduler(BaseScheduler):
 
     def first_order_step(self, x_s, s, t, eps_theta):
         """
-        Implement Eq 4.1. in the DPM-Solver paper.
+        Implement Eq 4.1 (3.7). in the DPM-Solver paper.
         Input:
             x_s (`torch.Tensor`): samples at timestep s.
             s (`torch.Tensor`): denoising starting timestep.
@@ -186,24 +186,34 @@ class DPMSolverScheduler(BaseScheduler):
         # DO NOT change the code outside this part.
         lambda_i1 = extract(self.dpm_lambdas, t_i1, x_ti1)
         lambda_i = extract(self.dpm_lambdas, t_i, x_ti1)
-        s_i = self.inverse_lambda((lambda_i1 + lambda_i)/2)
+        h = lambda_i - lambda_i1
+        lambda_s1 = lambda_i1 + h * 0.5
+        si = self.inverse_lambda(lambda_s1)
 
-        # An example of computing noise prediction inside the function.
-        model_output = self.net_forward_fn(x_ti1, t_i1.to(x_ti1.device))
-        x_ti = x_ti1
-        # Step 1: First-order step to get u_i
-        # u_i = self.first_order_step(x_ti1, t_i1, s_i, eps_theta)
-        
-        # # Step 2: Get noise prediction at (u_i, s_i)
-        # eps_s_i = self.net_forward_fn(u_i, s_i.to(u_i.device))
-        
-        # # Step 3: Extract coefficients for second-order correction
-        # alpha_i1 = extract(self.dpm_alphas, t_i1, x_ti1)
-        # alpha_i = extract(self.dpm_alphas, t_i, x_ti1)
-        
-        # # Step 4: Compute the second-order DPM-Solver step
-        # r_i = (lambda_i1 - lambda_i) / (lambda_i1 - (lambda_i1 + lambda_i)/2)
-        # x_ti = (alpha_i / alpha_i1) * x_ti1 - alpha_i * (lambda_i1 - lambda_i) * (1 + 1/(2*r_i)) * eps_theta + alpha_i * (lambda_i1 - lambda_i) * (1/(2*r_i)) * eps_s_i
+        log_alpha_i1 = torch.log(extract(self.dpm_alphas, t_i1, x_ti1))
+        log_alpha_si = torch.log(extract(self.dpm_alphas, si, x_ti1))
+        log_alpha_i = torch.log(extract(self.dpm_alphas, t_i, x_ti1))
+
+        sigma_i1 = extract(self.dpm_sigmas, t_i1, x_ti1)
+        sigma_si = extract(self.dpm_sigmas, si, x_ti1)
+        sigma_i = extract(self.dpm_sigmas, t_i, x_ti1)
+
+        # Compute Line 4 of the algorithm
+        phi_1 = torch.expm1(h * 0.5)  # exp(h / 2) - 1
+        ui = (
+            torch.exp(log_alpha_si - log_alpha_i1) * x_ti1
+            - (sigma_si * phi_1) * eps_theta
+        )
+
+        # Compute line 5 of the algorithm
+        phi_2 = torch.expm1(h)  # exp(h) - 1
+        # get the noise prediction 
+        eps_theta_ui_si = self.net_forward_fn(ui, si)
+        x_ti = (
+            torch.exp(log_alpha_i - log_alpha_i1) * x_ti1
+            - (sigma_i * phi_2) * eps_theta_ui_si
+        )
+
         # ######################
 
         return x_ti
