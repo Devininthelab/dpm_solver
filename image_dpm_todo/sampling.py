@@ -61,3 +61,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(args)
+    # python image_dpm_todo/sampling.py --ckpt_path /home/minhthan001/Projects/assignment_kaist_diffusion/image_diffusion_todo/results/cfg_diffusion-ddpm-06-18-205642/last.ckpt --save_dir ./save_img_dir_2

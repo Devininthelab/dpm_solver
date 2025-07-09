@@ -61,7 +61,7 @@ class DiffusionModule(nn.Module):
         # You can copy & paste your implementation of previous Assignments.
         assert class_label is not None
         assert len(class_label) == batch_size, f"len(class_label) != batch_size. {len(class_label)} != {batch_size}"
-        class_label = torch.cat([torch.zeros(batch_size, device=self.device, dtype=torch.long), class_label]) # null condition, class condition
+        class_label = torch.cat([torch.zeros(batch_size, device=self.device, dtype=torch.long), class_label.to(self.device)]) # null condition, class condition
         #######################
 
         traj = [x_T]
